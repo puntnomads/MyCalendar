@@ -9,6 +9,8 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.provider.CalendarContract;
+import android.support.v4.app.ActivityCompat;
+import android.support.v4.content.ContextCompat;
 import android.support.v7.app.AppCompatActivity;
 import android.text.format.DateUtils;
 import android.util.Log;
@@ -25,7 +27,10 @@ import com.google.android.gms.wearable.PutDataMapRequest;
 import com.google.android.gms.wearable.PutDataRequest;
 import com.google.android.gms.wearable.Wearable;
 
+import java.text.DateFormat;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Calendar;
 import java.util.Date;
 
 
@@ -74,9 +79,16 @@ public class MainActivity extends AppCompatActivity implements
     }
 
     public void askPermissions() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && checkSelfPermission(Manifest.permission.READ_CALENDAR) != PackageManager.PERMISSION_GRANTED) {
-            requestPermissions(new String[]{Manifest.permission.READ_CALENDAR}, PERMISSIONS_REQUEST_READ_CALENDAR);
-            //After this point you wait for callback in onRequestPermissionsResult(int, String[], int[]) overriden method
+        if (ContextCompat.checkSelfPermission(this,
+                Manifest.permission.READ_CALENDAR)
+                != PackageManager.PERMISSION_GRANTED) {
+            if (ActivityCompat.shouldShowRequestPermissionRationale(this,
+                    Manifest.permission.READ_CALENDAR)) {
+            } else {
+                ActivityCompat.requestPermissions(this,
+                        new String[]{Manifest.permission.READ_CALENDAR},
+                        PERMISSIONS_REQUEST_READ_CALENDAR);
+            }
         } else {
             // Android version is lesser than 6.0 or the permission is already granted.
             getCalendarEvents();
@@ -84,47 +96,55 @@ public class MainActivity extends AppCompatActivity implements
     }
 
     public void getCalendarEvents() {
-        // Run query
-        Cursor cur = null;
-        ContentResolver cr = getContentResolver();
-        Uri uri = CalendarContract.Calendars.CONTENT_URI;
-        String selection = "((" + CalendarContract.Calendars.ACCOUNT_NAME + " = ?) AND ("
-                + CalendarContract.Calendars.ACCOUNT_TYPE + " = ?) AND ("
-                + CalendarContract.Calendars.OWNER_ACCOUNT + " = ?))";
-        String[] selectionArgs = new String[] {"puntnomads@gmail.com", "com.google",
-                "puntnomads@gmail.com"};
-        // Submit the query and get a Cursor object back.
-        cur = cr.query(uri, EVENT_PROJECTION, selection, selectionArgs, null);
+        final String[] INSTANCE_PROJECTION = new String[] {
+                CalendarContract.Instances.TITLE,
+                CalendarContract.Instances.DESCRIPTION,
+                CalendarContract.Instances.BEGIN,
+                CalendarContract.Instances.END,
+        };
 
-        // Use the cursor to step through the returned records
+        // The indices for the projection array above.
+        final int PROJECTION_TITLE_INDEX = 0;
+        final int PROJECTION_DESCRIPTION_INDEX = 1;
+        final int PROJECTION_BEGIN_INDEX = 2;
+        final int PROJECTION_END_INDEX = 3;
+
+        Date now = new Date();
+        // Specify the date range you want to search for recurring event instances
+        Calendar beginTime = Calendar.getInstance();
+        beginTime.set(now.getYear()+1900, now.getMonth(), now.getDate()+0, now.getHours()+0, now.getMinutes()+0);
+        long startMillis = beginTime.getTimeInMillis();
+        Calendar endTime = Calendar.getInstance();
+        endTime.set(now.getYear()+1900, now.getMonth(), now.getDate()+1, now.getHours()+0, now.getMinutes()+0);
+        long endMillis = endTime.getTimeInMillis();
+
+        // Construct the query with the desired date range.
+        Uri.Builder builder = CalendarContract.Instances.CONTENT_URI.buildUpon();
+        ContentUris.appendId(builder, startMillis);
+        ContentUris.appendId(builder, endMillis);
+        String string = Long.toString(System.currentTimeMillis()) + " ";
+
+        // Submit the query
+        Cursor cur =  getContentResolver().query(builder.build(), INSTANCE_PROJECTION, null, null, null);
         while (cur.moveToNext()) {
 
-            Uri.Builder builder = CalendarContract.Instances.CONTENT_URI.buildUpon();
-            long now = new Date().getTime();
-            // get events from 1 day before and 1 day after.
-            ContentUris.appendId(builder, now /* - DateUtils.DAY_IN_MILLIS * 1 */);
-            ContentUris.appendId(builder, now + DateUtils.DAY_IN_MILLIS * 1);
-            String string = Long.toString(System.currentTimeMillis()) + " ";
-            Cursor eventCursor = getContentResolver().query(builder.build(), INSTANCE_PROJECTION,
-                    "calendar_id=" + 1, null, "startDay ASC, startMinute ASC");
-            // For a full list of available columns see http://tinyurl.com/yfbg76w
-            while (eventCursor.moveToNext()) {
-                String title = eventCursor.getString(eventCursor.getColumnIndex(CalendarContract.Instances.TITLE));
-                String description = eventCursor.getString(eventCursor.getColumnIndex(CalendarContract.Instances.DESCRIPTION));
-                long begin = eventCursor.getLong(eventCursor.getColumnIndex(CalendarContract.Instances.BEGIN));
-                long end = eventCursor.getLong(eventCursor.getColumnIndex(CalendarContract.Instances.END));
-                String theEvent = title + " " + description + " " + begin + " " + end;
-                Log.v("event : ", theEvent);
-                string += " " + theEvent;
-                titles.add(title);
-                descriptions.add(description);
-                beginTimes.add(begin);
-                endTimes.add(end);
-            }
-            eventCursor.close();
-            textView.setText(string);
+            // Get the field values
+            long begin = cur.getLong(PROJECTION_BEGIN_INDEX);
+            long end = cur.getLong(PROJECTION_END_INDEX);
+            String title = cur.getString(PROJECTION_TITLE_INDEX);
+            String description = cur.getString(PROJECTION_DESCRIPTION_INDEX);
+
+            String theEvent = title + " " + description + " " + begin + " " + end;
+            Log.v("event : ", theEvent);
+            string += " " + theEvent;
+            titles.add(title);
+            descriptions.add(description);
+            beginTimes.add(begin);
+            endTimes.add(end);
         }
         cur.close();
+        textView.setText(string);
+
     }
 
     // Connect to the data layer when the Activity starts
